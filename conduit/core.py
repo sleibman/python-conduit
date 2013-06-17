@@ -1,5 +1,11 @@
 #!/usr/bin/env python
 
+"""
+.. module:: core
+   :synopsis: conduit core module
+
+"""
+
 from util import comparable_interface
 import datetime
 import random
