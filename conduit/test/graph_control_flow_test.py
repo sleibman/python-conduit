@@ -1,5 +1,7 @@
 __author__ = 'sleibman'
 
+from conduit import *
+
 import nose
 import datetime
 import isodate
@@ -7,7 +9,7 @@ import isodate
 DAY = datetime.timedelta(days=1)
 
 
-class EmitIntegers(dataflow.DataBlock):
+class EmitIntegers(DataBlock):
     """
     Instantiate EmitIntegers with a maximum value, and it will act as a block that emits sequential integers
     from 0 to max, inclusive of both endpoints.
@@ -28,7 +30,7 @@ class EmitIntegers(dataflow.DataBlock):
             self.time = self.time + DAY
 
 
-class EmitTimeSeries(dataflow.DataBlock):
+class EmitTimeSeries(DataBlock):
     """
     Instantiate EmitTimeSeries with the entire timeseries as a list of (time, value) tuples.
     It will then act as a block that emits the next timeseries element on 'time' and 'value'
@@ -51,7 +53,7 @@ class EmitTimeSeries(dataflow.DataBlock):
             self.pointer += 1
 
 
-class ConfirmSequence(dataflow.DataBlock):
+class ConfirmSequence(DataBlock):
     """
     Helper class for other nose tests
     """
@@ -97,8 +99,8 @@ class TestConnectivity(object):
         """
         emit_data_block = EmitIntegers(4)
         confirm_sequence_block = ConfirmSequence([0, 1, 2, 3, 4], nose.tools.assert_equal)
-        dataflow.connect(emit_data_block, 'value', confirm_sequence_block, 'value')
-        graph = dataflow.Graph(emit_data_block)
+        connect(emit_data_block, 'value', confirm_sequence_block, 'value')
+        graph = Graph(emit_data_block)
         graph.run()
 
     def test_two_blocks_via_timeseries(self):
@@ -108,8 +110,8 @@ class TestConnectivity(object):
                       [isodate.parse_date('2000-01-04'), 9]]
         emit_data_block = EmitTimeSeries(timeseries)
         confirm_sequence_block = ConfirmSequence([1, 3, 5, 9], nose.tools.assert_equal)
-        dataflow.connect(emit_data_block, 'value', confirm_sequence_block, 'value')
-        graph = dataflow.Graph(emit_data_block)
+        connect(emit_data_block, 'value', confirm_sequence_block, 'value')
+        graph = Graph(emit_data_block)
         graph.run()
 
     def test_two_merged_inputs(self):
@@ -144,9 +146,9 @@ class TestConnectivity(object):
                          [isodate.parse_date('2000-01-04'), 3, 400]]
 
         confirm_sequence_block = ConfirmMergedSequence(expected_data, nose.tools.assert_equal)
-        dataflow.connect(emit_data_block_1, 'value', confirm_sequence_block, 'input_a')
-        dataflow.connect(emit_data_block_2, 'value', confirm_sequence_block, 'input_b')
-        graph = dataflow.Graph()
+        connect(emit_data_block_1, 'value', confirm_sequence_block, 'input_a')
+        connect(emit_data_block_2, 'value', confirm_sequence_block, 'input_b')
+        graph = Graph()
         graph.add_head(emit_data_block_1)
         graph.add_head(emit_data_block_2)
         graph.run()
@@ -179,9 +181,9 @@ class TestConnectivity(object):
         confirm_sequence_block = ConfirmMergedSequence(expected_data, nose.tools.assert_equal)
         confirm_sequence_block.set_debug_name('confirm_sequence_block')
 
-        dataflow.connect(emit_data_block_1, 'value', confirm_sequence_block, 'input_a')
-        dataflow.connect(emit_data_block_2, 'value', confirm_sequence_block, 'input_b')
-        graph = dataflow.Graph()
+        connect(emit_data_block_1, 'value', confirm_sequence_block, 'input_a')
+        connect(emit_data_block_2, 'value', confirm_sequence_block, 'input_b')
+        graph = Graph()
         graph.add_head(emit_data_block_1)
         graph.add_head(emit_data_block_2)
         graph.run()
