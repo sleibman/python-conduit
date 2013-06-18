@@ -1,4 +1,3 @@
-__author__ = 'sleibman'
 
 from conduit import *
 

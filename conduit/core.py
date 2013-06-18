@@ -358,11 +358,6 @@ class DataBlock():
                 downstream_blocks.append(consumer)
 
 
-        # 1. Ensure downstream blocks are open:
-        for output_channel in self.output_channels.values():
-            if not output_channel.is_open():
-                return downstream_blocks
-
         # Restrict the set of input channels we consider to those that are active (a channel is typically deactivated
         # before it starts producing useful data, and after it has reached the end of useful data)
         active_input_channels = {}
@@ -412,6 +407,12 @@ class DataBlock():
                     logging.debug("     Channel " + input_channel_name + " not satisfied. Bailing out.")
                     return downstream_blocks
 
+        # Ensure downstream channels are open. Note that this has to happen after pulling data from the input channels
+        # in order to properly accommodate the case in which a block consumes its own outputs.
+        for output_channel in self.output_channels.values():
+            if not output_channel.is_open():
+                return downstream_blocks
+
         # 4. Execute user code:
         logging.debug("Executing block code for: " + str(self))
         self.block_code()  # the block_code() method is responsible for setting new values in the output channels
@@ -460,8 +461,6 @@ class Block(DataBlock):
     User function should return a map of output arg names and values.
     """
 
-
-
     def __init__(self, user_function):
         DataBlock.__init__(self)
         self.user_function = user_function
@@ -478,7 +477,7 @@ class Block(DataBlock):
                 self.set_input_data(argname, {})
 
     def block_code(self):
-        inputs = self.get_and_clear_all_input_data()
+        inputs = self._get_all_input_values()
         outputs = self.user_function(**inputs)
         if outputs:
             for key in outputs.keys():
@@ -486,6 +485,29 @@ class Block(DataBlock):
         if 'previous_outputs' in self.output_channels.keys():
             self.output_channels['previous_outputs'].set_value(Data(self.time, copy.deepcopy(outputs)))
 
+
+class GeneratorBlock(Block):
+    def __init__(self, user_function):
+        Block.__init__(self, user_function)
+        self.first_time = True
+
+    def block_code(self):
+        inputs = self._get_all_input_values()
+        outputs = {}
+        if self.first_time:
+            self.f = self.user_function(**inputs)
+            outputs = self.f.next()
+            self.first_time = False
+        else:
+            try:
+                outputs = self.f.send(inputs)
+            except StopIteration:
+                self.terminate()
+        if outputs:
+            for key in outputs.keys():
+                self.set_output_data(key, outputs[key])
+        if 'previous_outputs' in self.output_channels.keys():
+            self.output_channels['previous_outputs'].set_value(Data(self.time, copy.deepcopy(outputs)))
 
 class Filter(Block):
     """
