@@ -225,6 +225,9 @@ class DataBlock():
     def terminated(self):
         return self.termination_reached
 
+    def increment_time(self):
+        self.time += DAY
+
     def set_input_data(self, key, value):
         """
         set_input_data will automatically create an input channel if necessary.
@@ -596,6 +599,7 @@ class Graph():
                     run_set.add(downstream_block)
             for head in self.heads:
                 if not head.terminated():
+                    head.increment_time()
                     run_set.add(head)
 
 
