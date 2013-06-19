@@ -3,7 +3,7 @@ import os
 
 setup(
     name = "conduit",
-    version = "0.0.2",
+    version = "0.0.3",
     author = "Steve Leibman",
     author_email = "sleibman@alum.mit.edu",
     description = ("Framework for dataflow-style python programming"),
