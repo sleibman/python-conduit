@@ -497,6 +497,13 @@ class GeneratorBlock(Block):
     def block_code(self):
         inputs = self._get_all_input_values()
         outputs = {}
+        """
+        self.f = self.user_function(**inputs)
+        try:
+            outputs = self.f.send(inputs)
+        except StopIteration:
+            self.terminate()
+        """
         if self.first_time:
             self.f = self.user_function(**inputs)
             outputs = self.f.next()
@@ -506,6 +513,7 @@ class GeneratorBlock(Block):
                 outputs = self.f.send(inputs)
             except StopIteration:
                 self.terminate()
+
         if outputs:
             for key in outputs.keys():
                 self.set_output_data(key, outputs[key])
