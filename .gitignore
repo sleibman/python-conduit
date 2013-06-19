@@ -48,3 +48,5 @@ Mandrel.py
 # Atlassian plug-in
 atlassian-ide-plugin.xml
 
+# sphinx-doc outputs
+_build

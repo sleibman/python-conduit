@@ -6,7 +6,7 @@ import datetime
 import isodate
 
 DAY = datetime.timedelta(days=1)
-
+MINUTE = datetime.timedelta(minutes=1)
 
 class EmitIntegers(DataBlock):
     """
@@ -16,7 +16,9 @@ class EmitIntegers(DataBlock):
 
     def __init__(self, max):
         super(EmitIntegers, self).__init__()
-        self.time = isodate.parse_date('1900-01-01')
+        # Intentionally making self.time a datetime.datetime object instead of datetime.date, in contrast with
+        # other tests, in order to exercise different types.
+        self.time = isodate.parse_datetime('1900-01-01T00:00:00')
         self.max = max
         self.value = 0
 
@@ -26,7 +28,7 @@ class EmitIntegers(DataBlock):
         else:
             self.set_output_data('value', self.value)
             self.value += 1
-            self.time = self.time + DAY
+            self.time = self.time + MINUTE
 
 
 class EmitTimeSeries(DataBlock):
@@ -186,5 +188,4 @@ class TestConnectivity(object):
         graph.add_head(emit_data_block_1)
         graph.add_head(emit_data_block_2)
         graph.run()
-
 

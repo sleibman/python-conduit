@@ -23,7 +23,6 @@ HOUR = datetime.timedelta(hours=1)
 
 WEIGHT = 50000000
 
-
 class Data(comparable_interface.Comparable):
     """
     The Data class acts as a struct containing user data and a timestamp. Data objects are passed from block to block
@@ -184,10 +183,8 @@ class DataBlock():
         self.input_data = {}       # Keys = channel name, Values = Data objects
         self.output_channels = {}  # Keys = channel name, Values = Channel objects
         self.priority = 100  # Lower numbers have higher priority
-        # The execution of each iteration of a block has a specific definition of "now"
-        # Initialize it to something early. 1001-01-01 seems sufficiently early.
-        # Happens to be the day that grand prince Stephen I became the first king of Hungary.
-        self.time = isodate.parse_date('1001-01-01')
+        # The execution of each iteration of a block has a specific definition of "now".
+        self.time = 0
         self.termination_reached = False
         self.debug_name = '<%s.%s object at %s>' % (self.__class__.__module__, self.__class__.__name__, hex(id(self)))
         self.block_initialization()
@@ -226,7 +223,9 @@ class DataBlock():
         return self.termination_reached
 
     def increment_time(self):
-        self.time += DAY
+        if isinstance(self.time, int):
+            # If time isn't an int, user has overridden it, and it will be up to them to increment time.
+            self.time += 1
 
     def set_input_data(self, key, value):
         """
@@ -315,6 +314,13 @@ class DataBlock():
 
     def advance_self_to_latest_time_of_pulled_data(self):
         for data_object in self.input_data.values():
+            if not isinstance(data_object.time, int) and isinstance(self.time, int):
+                # User has overridden time to be a new type. It would be cleaner to set a flag indicating
+                # that a user has overridden it, and possibly store the value in a different variable, but
+                # that approach has the cost that we would have to pass the flag through the channels with each
+                # message.
+                self.time = data_object.time
+                continue
             if data_object.time > self.time:
                 self.time = data_object.time
 
