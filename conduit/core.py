@@ -187,6 +187,8 @@ class DataBlock():
         self.time = 0
         self.termination_reached = False
         self.debug_name = '<%s.%s object at %s>' % (self.__class__.__module__, self.__class__.__name__, hex(id(self)))
+        self.start_time = None
+        self.end_time = None
         self.block_initialization()
 
     def __repr__(self):
@@ -226,6 +228,48 @@ class DataBlock():
         if isinstance(self.time, int):
             # If time isn't an int, user has overridden it, and it will be up to them to increment time.
             self.time += 1
+
+    def set_start(self, start):
+        self.start_time = start
+
+    def set_end(self, end):
+        self.end_time = end
+
+    def _before_valid_time_range(self):
+        """
+        In case of uncertainty (times not specified), we assume that we are in a valid range.
+        """
+        if self.start_time is not None:
+            try:
+                if self.time < self.start_time:
+                    return True
+            except TypeError:
+                return False
+        return False
+
+    def _after_valid_time_range(self):
+        """
+        In case of uncertainty (times not specified), we assume that we are in a valid range.
+        """
+        if self.end_time is not None:
+            try:
+                if self.time > self.end_time:
+                    return True
+            except TypeError:
+                return False
+        return False
+
+    def _in_valid_time_range(self):
+        """
+        If start_time or end_time is set and current time is outside the specified range, return False.
+        If time window is not comparable with current time (as would be the case if user code specifies the time to
+        be of a different type), we have not gotten far enough into the process to make a decision, and default to True.
+        All other cases return True.
+        """
+        if self._before_valid_time_range() or self._after_valid_time_range():
+            return False
+        else:
+            return True
 
     def set_input_data(self, key, value):
         """
@@ -359,12 +403,7 @@ class DataBlock():
         # So instead of all that fancy logic, we basically say screw it. Traverse the whole graph and offer
         # everybody the chance to run -- including blocks that are downstream of some that do not run on this iteration!
 
-
         downstream_blocks = []
-        for output_channel in self.output_channels.values():
-            for consumer in output_channel.get_consumers():
-                # logging.debug(str(self) + " is nominating block to append to run list: " + str(consumer))
-                downstream_blocks.append(consumer)
 
 
         # Restrict the set of input channels we consider to those that are active (a channel is typically deactivated
@@ -426,6 +465,16 @@ class DataBlock():
         logging.debug("Executing block code for: " + str(self))
         self.block_code()  # the block_code() method is responsible for setting new values in the output channels
         # logging.debug("After executing user code, block time is: " + str(self.time))
+
+        for output_channel in self.output_channels.values():
+            if self._in_valid_time_range():
+                for consumer in output_channel.get_consumers():
+                    # logging.debug(str(self) + " is nominating block to append to run list: " + str(consumer))
+                    downstream_blocks.append(consumer)
+            else:
+                output_channel.mark_consumers_hungry_for_more()
+                if self._after_valid_time_range():
+                    self.terminate()
 
         # 6. Return collection of downstream neighbors:
         return downstream_blocks
@@ -599,13 +648,15 @@ class Graph():
     def set_termination_condition(self, source_block, source_channel):
         connect(source_block, source_channel, self.master_control_block, 'continue')
 
-    def run(self):
+    def run(self, start=None, end=None):
         # TODO: It would be a good optimization to make sure that is X is upstream of Y, X has the opportunity to
         # run first in any given iteration. This is an optimization, not a requirement (but it turns out to be really
         # easy to create bugs in the logic in the block step() method that are resolved if this is a requirement).
         run_set = set()
         for head in self.heads:
             run_set.add(head)
+            head.set_start(start)
+            head.set_end(end)
         while run_set:  # Run through multiple iterations of entire graph
             while run_set:  # Run through a single iteration of entire graph
                 block = run_set.pop()
@@ -615,8 +666,6 @@ class Graph():
                 if not head.terminated():
                     head.increment_time()
                     run_set.add(head)
-
-
 
 
 def connect(source_block, source_channel_name, destination_block, destination_channel_name):

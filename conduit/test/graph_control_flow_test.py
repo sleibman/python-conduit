@@ -84,10 +84,8 @@ class ConfirmMergedSequence(ConfirmSequence):
         self.comparison_function(b, expectation[2])
         self.pointer += 1
 
-class TestConnectivity(object):
 
-    def test_sanity(self):
-        nose.tools.assert_equal(2.0, 2.0)
+class TestConnectivity(object):
 
     def test_two_blocks(self):
         """
@@ -189,3 +187,13 @@ class TestConnectivity(object):
         graph.add_head(emit_data_block_2)
         graph.run()
 
+    def test_time_range(self):
+        timeseries = [[isodate.parse_date('2000-01-01'), 1],
+                      [isodate.parse_date('2000-01-02'), 3],
+                      [isodate.parse_date('2000-01-03'), 5],
+                      [isodate.parse_date('2000-01-04'), 9]]
+        emit_data_block = EmitTimeSeries(timeseries)
+        confirm_sequence_block = ConfirmSequence([3, 5], nose.tools.assert_equal)
+        connect(emit_data_block, 'value', confirm_sequence_block, 'value')
+        graph = Graph(emit_data_block)
+        graph.run(start=isodate.parse_date('2000-01-02'), end=isodate.parse_date('2000-01-03'))
