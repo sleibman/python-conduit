@@ -418,24 +418,26 @@ class DataBlock():
             return downstream_blocks
 
         # 2. Pull data for earliest time. If there are no input channels, we just proceed:
-        unused_input_channels = {}
+        unprocessed_input_channels = {}
         if active_input_channels:
-            channel_with_earliest_data = min(active_input_channels.values())
+
             # Get the collection of channels from which I have not already consumed data:
-            unused_input_channel_names = [channel_name for channel_name in active_input_channels.keys()
+            unprocessed_input_channel_names = [channel_name for channel_name in active_input_channels.keys()
                                           if not active_input_channels[channel_name].consumers[self]]
-            unused_input_channels = {name:active_input_channels[name] for name in unused_input_channel_names}
-            if not unused_input_channels:
-                # If I have some input channels but none of them are unused, then there is no data to be pulled, and
-                # I must be done.
+            unprocessed_input_channels = {name:active_input_channels[name] for name in unprocessed_input_channel_names}
+            unprocessed_channel_with_earliest_data = min(unprocessed_input_channels.values())
+            if not unprocessed_input_channels:
+                # If I have some input channels but none of them are unprocessed, then there is no data to be pulled
+                # and I must be done.
                 return downstream_blocks
 
-        if unused_input_channels:
+        if unprocessed_input_channels:
             state_change = False
-            for input_channel_name in unused_input_channels.keys():
-                if unused_input_channels[input_channel_name] <= channel_with_earliest_data:
-                    new_data = unused_input_channels[input_channel_name].get_value(self)  # gets value AND marks as consumed.
-                    logging.debug("==> Pulling data (" + str(new_data.data) + ") from channel '" + input_channel_name + "' -- " + str(self))
+            for input_channel_name in unprocessed_input_channels.keys():
+                if unprocessed_input_channels[input_channel_name] <= unprocessed_channel_with_earliest_data:
+                    new_data = unprocessed_input_channels[input_channel_name].get_value(self)  # gets value AND marks as consumed.
+                    logging.debug("==> Pulling data (" + str(new_data.data) + ") from channel '" +
+                                  input_channel_name + "' -- " + str(self))
                     if (not self.input_data) or \
                             (not input_channel_name in self.input_data) or \
                                     self.input_data[input_channel_name] != new_data:
@@ -446,7 +448,8 @@ class DataBlock():
             self.advance_self_to_latest_time_of_pulled_data()
 
         for input_name in self.input_data.keys():
-            logging.debug("# BLOCK " + str(self) + ": time=" + str(self.time) + ", " + str(input_name) + " = " + str(self.input_data[input_name]))
+            logging.debug("# BLOCK " + str(self) + ": time=" + str(self.time) + ", " + str(input_name) + " = " +
+                          str(self.input_data[input_name]))
 
         # 3. Ensure inputs satisfied (note that we want input data for all channels, not just those currently active):
         if self.input_channels:
@@ -455,11 +458,16 @@ class DataBlock():
                     logging.debug("     Channel " + input_channel_name + " not satisfied. Bailing out.")
                     return downstream_blocks
 
-        # Ensure downstream channels are open. Note that this has to happen after pulling data from the input channels
-        # in order to properly accommodate the case in which a block consumes its own outputs.
+        # Ensure at least one downstream channel is open.
+        # Note that this has to happen after pulling data from the input channels in order to properly accommodate the
+        # case in which a block consumes its own outputs.
+        at_least_one_channel_open = False
         for output_channel in self.output_channels.values():
-            if not output_channel.is_open():
-                return downstream_blocks
+            if output_channel.is_open():
+                at_least_one_channel_open = True
+                break
+        if not at_least_one_channel_open:
+            return downstream_blocks
 
         # 4. Execute user code:
         logging.debug("Executing block code for: " + str(self))

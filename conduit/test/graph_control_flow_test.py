@@ -53,6 +53,27 @@ class EmitTimeSeries(DataBlock):
             self.set_output_data('value', timeseries_entry[1])
             self.pointer += 1
 
+def expected_fruit_quantity(fruit_name):
+    """
+    Returns an arbitrary (but consistent) number, given a string input.
+    """
+    return hash(fruit_name) % 100
+
+def generate_fruit_inventory():
+    fields = ['fruit', 'count']
+    data = (('apple', expected_fruit_quantity('apple')),
+            ('peach', expected_fruit_quantity('peach')),
+            ('star fruit', expected_fruit_quantity('star fruit')))
+    yield {'fields': fields}
+    for item in data:
+        yield {'data': item}
+
+def confirm_fruit_delivery(fields, data):
+    fruit_type = data[fields.index('fruit')]
+    fruit_count = data[fields.index('count')]
+    nose.tools.assert_equal(fruit_count, expected_fruit_quantity(fruit_type))
+
+
 
 class ConfirmSequence(DataBlock):
     """
@@ -188,6 +209,10 @@ class TestConnectivity(object):
         graph.run()
 
     def test_time_range(self):
+        """
+        Tests the ability to specify start and end times, outside of which we do not execute any blocks downstream
+        of the head(s).
+        """
         timeseries = [[isodate.parse_date('2000-01-01'), 1],
                       [isodate.parse_date('2000-01-02'), 3],
                       [isodate.parse_date('2000-01-03'), 5],
@@ -197,3 +222,15 @@ class TestConnectivity(object):
         connect(emit_data_block, 'value', confirm_sequence_block, 'value')
         graph = Graph(emit_data_block)
         graph.run(start=isodate.parse_date('2000-01-02'), end=isodate.parse_date('2000-01-03'))
+
+    def test_partial_outputs(self):
+        """
+        Tests the ability of an upstream block to provide only a subset of the registered outputs in any given
+        iteration (legal as long as it eventually provides all outputs).
+        """
+        data_generator_block = conduit.GeneratorBlock(generate_fruit_inventory)
+        verification_block = conduit.Block(confirm_fruit_delivery)
+        data_generator_block('data') >> verification_block('data')
+        data_generator_block('fields') >> verification_block('fields')
+        graph = conduit.Graph(data_generator_block)
+        graph.run()
