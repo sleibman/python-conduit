@@ -6,7 +6,7 @@ with open('README.md') as file:
 
 setup(
     name = "conduit",
-    version = "0.0.5",
+    version = "0.0.6",
     author = "Steve Leibman",
     author_email = "sleibman@alum.mit.edu",
     description = ("Framework for dataflow-style python programming"),
@@ -16,6 +16,8 @@ setup(
     packages = ['conduit',
                 'conduit.util',
                 'conduit.test'],
+    include_package_data = True,
+    package_data = {'conduit': ['README.md', 'LICENSE.txt']},
     long_description = long_description,
     test_suite = 'conduit.test',
     classifiers = [

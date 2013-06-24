@@ -1,3 +1,7 @@
+0.0.6
+
+* Fixed pip installer so that it can successfully find the contents of README.md
+
 0.0.5
 
 * Additional tests

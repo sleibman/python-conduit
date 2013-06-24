@@ -15,3 +15,12 @@ conduit is free software and is released under the terms
 of the MIT license (<http://opensource.org/licenses/mit-license.php>),
 as specified in the accompanying LICENSE.txt file.
 
+# Procedures #
+
+Contributors: Submit pull requests on github to request that your changes be added to the repository.
+
+Maintainers: To release a new version:
+1. Increment release number in setup.py
+2. Run 'python setup.py sdist' to create a new distribution.
+3. Using a virtualenv, run 'pip install conduit-<version>.tar.gz' to locally install for testing purposes.
+4. 
