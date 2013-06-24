@@ -6,7 +6,7 @@ with open('README.md') as file:
 
 setup(
     name = "conduit",
-    version = "0.0.4",
+    version = "0.0.5",
     author = "Steve Leibman",
     author_email = "sleibman@alum.mit.edu",
     description = ("Framework for dataflow-style python programming"),
