@@ -66,15 +66,13 @@ class Channel(comparable_interface.Comparable):
         self.producer = None
         self.debug_name_string = None
         self.active = False
+        self.time = 0  # Channel time is always greater than or equal to the timestamp on the data in the channel
 
     def _cmpkey(self):
         """
         Provided for the functionality in comparable_interface.
-        Comparisons on Data objects will use the time field.
-        So, for example, to get the Data object with the earliest time stamp from a list of Data objects,
-        just call min(list_of_Data_objects).
         """
-        return self.value
+        return self.time
 
     def __repr__(self):
         """
@@ -98,7 +96,10 @@ class Channel(comparable_interface.Comparable):
             return "Channel connecting " + str(self.producer) + " to " + str(self.consumers)
 
     def time(self):
-        return self.value.time
+        return self.time
+
+    def touch(self, time):
+        self.time = time
 
     def get_value(self, consumer=None):
         """
@@ -356,6 +357,20 @@ class DataBlock():
     def get_output_channel_names(self):
         return self.output_channels.keys()
 
+    def advance_self_to_latest_time_of_all_input_channels(self):
+        channel = max(self.input_channels.values())
+        self.time = channel.time
+        """
+        if not isinstance(data_object.time, int) and isinstance(self.time, int):
+            # User has overridden time to be a new type. It would be cleaner to set a flag indicating
+            # that a user has overridden it, and possibly store the value in a different variable, but
+            # that approach has the cost that we would have to pass the flag through the channels with each
+            # message.
+            self.time = data_object.time
+        else: data_object.time > self.time:
+            self.time = data_object.time
+        """
+
     def advance_self_to_latest_time_of_pulled_data(self):
         for data_object in self.input_data.values():
             if not isinstance(data_object.time, int) and isinstance(self.time, int):
@@ -363,6 +378,14 @@ class DataBlock():
                 # that a user has overridden it, and possibly store the value in a different variable, but
                 # that approach has the cost that we would have to pass the flag through the channels with each
                 # message.
+                self.time = data_object.time
+                continue
+            if data_object.time > self.time:
+                self.time = data_object.time
+
+    def advance_self_to_latest_time_of_data_in_channels(self):
+        for data_object in self.input_channels.values():
+            if not isinstance(data_object.time, int) and isinstance(self.time, int):
                 self.time = data_object.time
                 continue
             if data_object.time > self.time:
@@ -421,20 +444,39 @@ class DataBlock():
         unprocessed_input_channels = {}
         if active_input_channels:
 
+            for output_channel in self.output_channels.values():
+                # Update timestamp unconditionally (whether the user code provided a new value or not).
+                # This demonstrates that the block has provided everything it knows for the current time.
+                output_channel.touch(self.time)
+
             # Get the collection of channels from which I have not already consumed data:
             unprocessed_input_channel_names = [channel_name for channel_name in active_input_channels.keys()
                                           if not active_input_channels[channel_name].consumers[self]]
             unprocessed_input_channels = {name:active_input_channels[name] for name in unprocessed_input_channel_names}
-            unprocessed_channel_with_earliest_data = min(unprocessed_input_channels.values())
+            channel_with_earliest_data = min(active_input_channels.values())
+            if unprocessed_input_channels:
+                unprocessed_channel_with_earliest_data = min(unprocessed_input_channels.values())
+            else:
+                unprocessed_channel_with_earliest_data = None
+
             if not unprocessed_input_channels:
-                # If I have some input channels but none of them are unprocessed, then there is no data to be pulled
-                # and I must be done.
+                # If I have some input channels but none of them are unprocessed, then there is no data to be pulled.
+                # In this case, we need to pass along the current time, and be done.
+                self.advance_self_to_latest_time_of_data_in_channels()
+                for output_channel in self.output_channels.values():
+                    output_channel.touch(self.time)
                 return downstream_blocks
+
+
+
 
         if unprocessed_input_channels:
             state_change = False
             for input_channel_name in unprocessed_input_channels.keys():
-                if unprocessed_input_channels[input_channel_name] <= unprocessed_channel_with_earliest_data:
+                # We compare against the timestamps for all channels because even if a given channel has provided us
+                # valid data, if its timestamp is still earlier than what we believe to be the current timestamp, then
+                # we need to provide it the opportunity to potentially give even more recent data.
+                if unprocessed_input_channels[input_channel_name] <= channel_with_earliest_data:
                     new_data = unprocessed_input_channels[input_channel_name].get_value(self)  # gets value AND marks as consumed.
                     logging.debug("==> Pulling data (" + str(new_data.data) + ") from channel '" +
                                   input_channel_name + "' -- " + str(self))
@@ -447,6 +489,7 @@ class DataBlock():
                 return downstream_blocks
             self.advance_self_to_latest_time_of_pulled_data()
 
+
         for input_name in self.input_data.keys():
             logging.debug("# BLOCK " + str(self) + ": time=" + str(self.time) + ", " + str(input_name) + " = " +
                           str(self.input_data[input_name]))
@@ -458,21 +501,24 @@ class DataBlock():
                     logging.debug("     Channel " + input_channel_name + " not satisfied. Bailing out.")
                     return downstream_blocks
 
-        # Ensure at least one downstream channel is open.
+        # Ensure that -- if there are any downstream channels -- they are all open.
         # Note that this has to happen after pulling data from the input channels in order to properly accommodate the
         # case in which a block consumes its own outputs.
-        at_least_one_channel_open = False
-        for output_channel in self.output_channels.values():
-            if output_channel.is_open():
-                at_least_one_channel_open = True
-                break
-        if not at_least_one_channel_open:
-            return downstream_blocks
+        if self.output_channels:
+            for output_channel in self.output_channels.values():
+                if not output_channel.is_open():
+                    return downstream_blocks
 
         # 4. Execute user code:
         logging.debug("Executing block code for: " + str(self))
         self.block_code()  # the block_code() method is responsible for setting new values in the output channels
         # logging.debug("After executing user code, block time is: " + str(self.time))
+
+        for output_channel in self.output_channels.values():
+            # Update timestamp unconditionally We do it again here (in addition to above), in case the user code updated
+            # self.time. It needed to be done above in case we were to bail out before running user code.
+            output_channel.touch(self.time)
+
 
         for output_channel in self.output_channels.values():
             if self._in_valid_time_range():
@@ -600,8 +646,6 @@ class Filter(Block):
 class PassThrough(Block):
     """
     User function need not return anything. We just pass all inputs to outputs.
-    If True, all input args will be passed unmodified as output args.
-    If False, all output args will have a value of None.
     """
     def block_code(self):
         inputs = self._get_all_input_values()

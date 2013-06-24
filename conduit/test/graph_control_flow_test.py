@@ -7,6 +7,7 @@ import isodate
 
 DAY = datetime.timedelta(days=1)
 MINUTE = datetime.timedelta(minutes=1)
+_visited_blocks = set()
 
 class EmitIntegers(DataBlock):
     """
@@ -23,6 +24,8 @@ class EmitIntegers(DataBlock):
         self.value = 0
 
     def block_code(self):
+        global _visited_blocks
+        _visited_blocks.add('EmitIntegers')
         if self.value > self.max:
             self.terminate()
         else:
@@ -44,6 +47,8 @@ class EmitTimeSeries(DataBlock):
         self.timeseries = timeseries
 
     def block_code(self):
+        global _visited_blocks
+        _visited_blocks.add('EmitTimeSeries')
         if self.pointer >= len(self.timeseries):
             self.terminate()
         else:
@@ -60,6 +65,8 @@ def expected_fruit_quantity(fruit_name):
     return hash(fruit_name) % 100
 
 def generate_fruit_inventory():
+    global _visited_blocks
+    _visited_blocks.add('generate_fruit_inventory')
     fields = ['fruit', 'count']
     data = (('apple', expected_fruit_quantity('apple')),
             ('peach', expected_fruit_quantity('peach')),
@@ -69,10 +76,14 @@ def generate_fruit_inventory():
         yield {'data': item}
 
 def confirm_fruit_delivery(fields, data):
+    global _visited_blocks
+    _visited_blocks.add('confirm_fruit_delivery')
     fruit_type = data[fields.index('fruit')]
     fruit_count = data[fields.index('count')]
     nose.tools.assert_equal(fruit_count, expected_fruit_quantity(fruit_type))
 
+def passthrough_function(data):
+    pass
 
 
 class ConfirmSequence(DataBlock):
@@ -86,6 +97,8 @@ class ConfirmSequence(DataBlock):
         self.pointer = 0
 
     def block_code(self):
+        global _visited_blocks
+        _visited_blocks.add('ConfirmSequence')
         value = self.get_input('value')
         self.comparison_function(value, self.desired_sequence[self.pointer])
         self.pointer += 1
@@ -97,6 +110,8 @@ class ConfirmMergedSequence(ConfirmSequence):
     """
 
     def block_code(self):
+        global _visited_blocks
+        _visited_blocks.add('ConfirmMergedSequence')
         a = self.get_input('input_a')
         b = self.get_input('input_b')
         expectation = self.desired_sequence[self.pointer]
@@ -117,13 +132,18 @@ class TestConnectivity(object):
         |                     |        |                         |
         +---------------------+        +-------------------------+
         """
+        global _visited_blocks
+        _visited_blocks = set()
         emit_data_block = EmitIntegers(4)
         confirm_sequence_block = ConfirmSequence([0, 1, 2, 3, 4], nose.tools.assert_equal)
         connect(emit_data_block, 'value', confirm_sequence_block, 'value')
         graph = Graph(emit_data_block)
         graph.run()
+        nose.tools.assert_equal(_visited_blocks, set(['EmitIntegers', 'ConfirmSequence']))
 
     def test_two_blocks_via_timeseries(self):
+        global _visited_blocks
+        _visited_blocks = set()
         timeseries = [[isodate.parse_date('2000-01-01'), 1],
                       [isodate.parse_date('2000-01-02'), 3],
                       [isodate.parse_date('2000-01-03'), 5],
@@ -133,6 +153,7 @@ class TestConnectivity(object):
         connect(emit_data_block, 'value', confirm_sequence_block, 'value')
         graph = Graph(emit_data_block)
         graph.run()
+        nose.tools.assert_equal(_visited_blocks, set(['EmitTimeSeries', 'ConfirmSequence']))
 
     def test_two_merged_inputs(self):
         """
@@ -150,6 +171,8 @@ class TestConnectivity(object):
         |    value [200,400] ===========> input_b                                             |
         +---------------------+        +------------------------------------------------------+
         """
+        global _visited_blocks
+        _visited_blocks = set()
         timeseries_1 = [[isodate.parse_date('2000-01-01'), 1],
                         [isodate.parse_date('2000-01-03'), 3]]
 
@@ -172,12 +195,16 @@ class TestConnectivity(object):
         graph.add_head(emit_data_block_1)
         graph.add_head(emit_data_block_2)
         graph.run()
+        nose.tools.assert_equal(_visited_blocks, set(['EmitTimeSeries', 'ConfirmMergedSequence']))
 
     def test_discarded_inputs(self):
         """
+        Test discarded inputs.
         This test uses the same graph arrangement as test_two_merged_inputs(), but for this test case, one of the
         input data streams has several entries that will be discarded before the other input is ready.
         """
+        global _visited_blocks
+        _visited_blocks = set()
         timeseries_1 = [[isodate.parse_date('2000-01-01'), 1],
                         [isodate.parse_date('2000-01-02'), 2],
                         [isodate.parse_date('2000-01-03'), 3],
@@ -207,12 +234,52 @@ class TestConnectivity(object):
         graph.add_head(emit_data_block_1)
         graph.add_head(emit_data_block_2)
         graph.run()
+        nose.tools.assert_equal(_visited_blocks, set(['EmitTimeSeries', 'ConfirmMergedSequence']))
+
+
+    def test_offset_inputs(self):
+        """
+        Test offset inputs.
+        This test uses the same graph arrangement as test_two_merged_inputs(), but for this test case, none of the
+        inputs have perfect alignment.
+        """
+        global _visited_blocks
+        _visited_blocks = set()
+        timeseries_1 = [[isodate.parse_date('2000-01-01'), 1]]
+
+        timeseries_2 = [[isodate.parse_date('2000-01-02'), 200],
+                        [isodate.parse_date('2000-01-03'), 300]]
+
+        emit_data_block_1 = EmitTimeSeries(timeseries_1)
+        emit_data_block_2 = EmitTimeSeries(timeseries_2)
+
+        emit_data_block_1.set_debug_name('emit_data_block_1')
+        emit_data_block_2.set_debug_name('emit_data_block_2')
+
+        # We should see the sequence start on the first day for which we have data for BOTH inputs,
+        # and we should see another call for every time that we have updated information for ANY input:
+        expected_data = [[isodate.parse_date('2000-01-02'), 1, 200],
+                         [isodate.parse_date('2000-01-03'), 1, 300]]
+
+        confirm_sequence_block = ConfirmMergedSequence(expected_data, nose.tools.assert_equal)
+        confirm_sequence_block.set_debug_name('confirm_sequence_block')
+
+        connect(emit_data_block_1, 'value', confirm_sequence_block, 'input_a')
+        connect(emit_data_block_2, 'value', confirm_sequence_block, 'input_b')
+        graph = Graph()
+        graph.add_head(emit_data_block_1)
+        graph.add_head(emit_data_block_2)
+        graph.run()
+        nose.tools.assert_equal(_visited_blocks, set(['EmitTimeSeries', 'ConfirmMergedSequence']))
+
 
     def test_time_range(self):
         """
         Tests the ability to specify start and end times, outside of which we do not execute any blocks downstream
         of the head(s).
         """
+        global _visited_blocks
+        _visited_blocks = set()
         timeseries = [[isodate.parse_date('2000-01-01'), 1],
                       [isodate.parse_date('2000-01-02'), 3],
                       [isodate.parse_date('2000-01-03'), 5],
@@ -222,15 +289,48 @@ class TestConnectivity(object):
         connect(emit_data_block, 'value', confirm_sequence_block, 'value')
         graph = Graph(emit_data_block)
         graph.run(start=isodate.parse_date('2000-01-02'), end=isodate.parse_date('2000-01-03'))
+        nose.tools.assert_equal(_visited_blocks, set(['EmitTimeSeries', 'ConfirmSequence']))
 
-    def test_partial_outputs(self):
+
+    def test_one_time_output_with_intermediaries(self):
         """
-        Tests the ability of an upstream block to provide only a subset of the registered outputs in any given
-        iteration (legal as long as it eventually provides all outputs).
+        In this test, one upstream blocks only provides data once, keeping it the same for the rest of time.
+        The other block provides new data at each iteration.
+        +----------------------+      +---------------------+       +-------------------------------------------------+
+        |                      |      |  passthrough FIELDS |       |                                                 |
+        |              fields ========>                     =========> fields [only has info on iteration 0]          |
+        |                      |      |                     |       |                                                 |
+        |                      |      +---------------------+       |                                                 |
+        | data_generator_block |                                    |                                                 |
+        |                      |      +---------------------+       |       verification_block                        |
+        |                      |      | passthrough DATA    |       |                                                 |
+        |                      |      |                     |       |                                                 |
+        |                      |      |                     |       |                                                 |
+        |                      |      |                     |       |                                                 |
+        |                data ========>                    ==========> data [has info on iterations 1-4]              |
+        +----------------------+      +---------------------+       +-------------------------------------------------+
+
+        There are two tricky parts to this arrangement:
+        1. The user cannot connect the data generator block directly to the verification block. The reason for this is
+         that the data generator block only provides info for "fields" on iteration 0, and only provides info for "data"
+         on iterations 1-n. Since the verification block has to wait for iteration 1 to have both of its inputs
+         fulfilled, the "fields" channel would be full, and the data generator block will never be permitted to run.
+         This could be solved by having a buffer in the channel larger than the 1 iteration it can currently hold.
+        2. On the implementation side, the thing that originally tripped up the success of this test is that the
+         passthrough for "fields" needs to update ist own timestamp every time the data generator block iterates, even
+         though no new data is provided. Otherwise the logic for the execution of the verification block cannot be done
+         correctly.
         """
+        global _visited_blocks
+        _visited_blocks = set()
         data_generator_block = conduit.GeneratorBlock(generate_fruit_inventory)
         verification_block = conduit.Block(confirm_fruit_delivery)
-        data_generator_block('data') >> verification_block('data')
-        data_generator_block('fields') >> verification_block('fields')
+        passthrough_block_1 = conduit.PassThrough(passthrough_function)
+        passthrough_block_1.set_debug_name('passthrough for DATA')
+        passthrough_block_2 = conduit.PassThrough(passthrough_function)
+        passthrough_block_2.set_debug_name('passthrough for FIELDS')
+        data_generator_block('data') >> passthrough_block_1('data') >> verification_block('data')
+        data_generator_block('fields') >> passthrough_block_2('data') >> verification_block('fields')
         graph = conduit.Graph(data_generator_block)
         graph.run()
+        nose.tools.assert_equal(_visited_blocks, set(['generate_fruit_inventory', 'confirm_fruit_delivery']))
