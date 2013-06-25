@@ -22,5 +22,9 @@ Contributors: Submit pull requests on github to request that your changes be add
 Maintainers: To release a new version:
 1. Increment release number in setup.py
 2. Run 'python setup.py sdist' to create a new distribution.
-3. Using a virtualenv, run 'pip install conduit-<version>.tar.gz' to locally install for testing purposes.
-4. 
+3. Using a virtualenv, run 'pip install dist/conduit-<version>.tar.gz' to locally install for testing purposes.
+4. Run the nose tests via:
+     % cd <virtualenv_dir>/lib/python2.7/site-packages/conduit/test
+     % nosetests
+5. Upload new package via:
+     % python setup.py sdist upload 
