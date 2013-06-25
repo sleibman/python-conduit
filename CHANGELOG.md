@@ -1,3 +1,12 @@
+0.0.7
+
+* Users no longer need to instantiate their own graph object. Just call the top-level connect() and run() functions.
+* Minor breaking changes: You should now call graph_clear() prior to making a new set of graph connections in an 
+  existing process (while running tests, for example). Users should no longer explicitly specify the "heads" of
+  their graph. Instead, the system will treat any block with no inputs as a "head".
+* The run() function now returns a "trace" object for inspection of the execution history.
+* Graphs are now guaranteed to attempt execution in topologically sorted order.
+
 0.0.6
 
 * Fixed pip installer so that it can successfully find the contents of README.md
