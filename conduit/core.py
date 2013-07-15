@@ -13,11 +13,11 @@ import logging
 import abc
 import copy
 import Queue
-import isodate
+#import isodate
 
 random.seed(0)
 
-START = isodate.parse_date('2010-03-01')
+#START = isodate.parse_date('2010-03-01')
 DAY = datetime.timedelta(days=1)
 HOUR = datetime.timedelta(hours=1)
 TRACE_ENTRIES = {'execute': ['ACTION', 'BLOCK_TIME', 'BLOCK_NAME']}
@@ -305,9 +305,8 @@ class DataBlock():
 
     def _get_all_input_values(self):
         input_values = {}
-        for input_name in self.input_channels.keys():
-            channel = self.input_channels[input_name]
-            data_object = channel.get_value(self)
+        for input_name in self.input_data.keys():
+            data_object = self.input_data[input_name]
             input_values[input_name] = data_object.data
         return input_values
 
@@ -424,6 +423,9 @@ class DataBlock():
                 self.update_output_channel_timestamps()
                 return downstream_blocks
 
+        if self.terminated():
+            return downstream_blocks
+
         if unprocessed_input_channels:
             state_change = False
             for input_channel_name in unprocessed_input_channels.keys():
@@ -469,6 +471,8 @@ class DataBlock():
         # logging.debug("After executing user code, block time is: " + str(self.time))
 
         self.update_output_channel_timestamps()
+        if self._after_valid_time_range():
+            self.terminate()
 
         for output_channel in self.output_channels.values():
             if self._in_valid_time_range():
@@ -477,8 +481,8 @@ class DataBlock():
                     downstream_blocks.append(consumer)
             else:
                 output_channel.mark_consumers_hungry_for_more()
-                if self._after_valid_time_range():
-                    self.terminate()
+                #if self._after_valid_time_range():
+                #    self.terminate()
 
         # Return collection of downstream neighbors:
         return downstream_blocks
